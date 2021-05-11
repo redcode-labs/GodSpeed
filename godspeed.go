@@ -8,8 +8,12 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"io/ioutil"
+	"net/http"
+
 
 	"github.com/akamensky/argparse"
+	"github.com/savaki/jq"
 	"github.com/olekukonko/tablewriter"
 	"github.com/atotto/clipboard"
 	"github.com/c-bata/go-prompt"
@@ -268,6 +272,7 @@ func StartCommandPrompt() {
 			}
 		case "exit":
 			PrintInfo("Exiting...")
+			CmdBlind("pkill -9 ngrok")
 			os.Exit(0)
 		case "check":
 			parser := argparse.NewParser("check", "Check connectivity of active hosts") //, usage_prologue)
@@ -332,6 +337,41 @@ func StartCommandPrompt() {
 	}
 }
 
+func StartTunnel(port string) (string, string) {
+	//regions := []string{"us", "eu", "ap", "au", "sa", "jp", "in"}
+	//selected_region := RandomSelectStr(regions)
+	go CmdBlind("ngrok tcp "+port)
+	time.Sleep(2 * time.Second)
+	local_url := "http://localhost:4040/api/tunnels"
+	resp, err := http.Get(local_url)
+	if err != nil {
+		PrintError("Cannot obtain tunnel's address -> "+err.Error())
+		os.Exit(0)
+	}
+	defer resp.Body.Close()
+	json, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		PrintError("Cannot obtain tunnel's address -> "+err.Error())
+		os.Exit(0)
+	}
+	jq_op_1, _ := jq.Parse(".tunnels")
+	json_1, _ := jq_op_1.Apply(json)
+	jq_op_2, _ := jq.Parse(".[0]")
+	json_2, _ := jq_op_2.Apply(json_1)
+	jq_op_3, _ := jq.Parse(".public_url")
+	json_3, _ := jq_op_3.Apply(json_2)
+	main_url := strings.Replace(string(json_3), `"`, "", -1)
+	main_url = strings.Replace(main_url, `tcp://`, "", -1)
+	tunnel_addr := strings.Split(main_url, ":")[0]
+	tunnel_port := strings.Split(main_url, ":")[1]
+	t_ip, err := DnsLookup(tunnel_addr)
+	tunnel_ip := t_ip[0]
+	if err != nil {
+		PrintError(F("Cannot perform DNS lookup for %s: %s", Red(tunnel_ip), err.Error()))
+	}
+	return tunnel_ip, tunnel_port
+}
+
 func StartServer(proto, port string) {
 	go StartCommandPrompt()
 	listener, _ := net.Listen(proto, "0.0.0.0:"+port)
@@ -371,15 +411,22 @@ func main() {
 	parser := argparse.NewParser("godspeed", "")
 	var port *string = parser.String("p", "port", &argparse.Options{Default: "4444", Help: "Local port to listen on"})
 	var clip *bool = parser.Flag("c", "clip", &argparse.Options{Required: false, Help: "Copy listening C2 address to clipboard"})
+	var tunnel *bool = parser.Flag("t", "tunnel", &argparse.Options{Required: false, Help: "Expose C2 server using Ngrok tunnel"})
 	err := parser.Parse(os.Args)
 	ExitOnError(err)
 	c2_addr := GetLocalIp() + ":" + *port
+	if *tunnel{
+		t_addr, t_port := StartTunnel(*port)
+		c2_addr = t_addr + ":" + t_port
+		PrintInfo("Started tunnel")
+	}
 	p()
-	PrintInfo(F("Started server on port %s", green(bold(*port))))
+	PrintInfo(F("Started reverse handler %s", cyan(bold("["+c2_addr+"]"))))
 	p()
 	if *clip {
 		clipboard.WriteAll(c2_addr)
 		PrintInfo("Copied server address to clipboard")
+		p()
 	}
 	StartServer("tcp", *port)
 }
